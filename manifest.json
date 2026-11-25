@@ -40,175 +40,175 @@
       {
         "chan": "has_position",
         "devpropname": "has_position",
-        "title": "Есть позиция трекера",
+        "title": "1. Есть позиция трекера",
         "r": 1,
         "w": 0
       },
       {
         "chan": "position_id",
         "devpropname": "position_id",
-        "title": "ID позиции",
+        "title": "1. ID позиции",
         "r": 1,
         "w": 0
       },
       {
         "chan": "fix_time",
         "devpropname": "fix_time",
-        "title": "Время фиксации (Unix)",
+        "title": "1. Время фиксации (Unix)",
         "r": 1,
         "w": 0
       },
       {
         "chan": "server_time",
         "devpropname": "server_time",
-        "title": "Время приёма (Unix)",
+        "title": "1. Время приёма (Unix)",
         "r": 1,
         "w": 0
       },
       {
         "chan": "valid",
         "devpropname": "valid",
-        "title": "Позиция валидна",
+        "title": "1. Позиция валидна",
         "r": 1,
         "w": 0
       },
       {
         "chan": "latitude",
         "devpropname": "latitude",
-        "title": "Широта",
+        "title": "1. Широта",
         "r": 1,
         "w": 0
       },
       {
         "chan": "longitude",
         "devpropname": "longitude",
-        "title": "Долгота",
+        "title": "1. Долгота",
         "r": 1,
         "w": 0
       },
       {
         "chan": "altitude",
         "devpropname": "altitude",
-        "title": "Высота, м",
+        "title": "1. Высота, м",
         "r": 1,
         "w": 0
       },
       {
         "chan": "course",
         "devpropname": "course",
-        "title": "Курс, °",
+        "title": "1. Курс, °",
         "r": 1,
         "w": 0
       },
       {
         "chan": "speed",
         "devpropname": "speed",
-        "title": "Скорость GPS, км/ч",
+        "title": "1. Скорость GPS, км/ч",
         "r": 1,
         "w": 0
       },
       {
         "chan": "address",
         "devpropname": "address",
-        "title": "Адрес",
+        "title": "1. Адрес",
         "r": 1,
         "w": 0
       },
       {
         "chan": "geofence_ids",
         "devpropname": "geofence_ids",
-        "title": "ID геозон (JSON)",
+        "title": "1. ID геозон (JSON)",
         "r": 1,
         "w": 0
       },
       {
         "chan": "geofence_id",
         "devpropname": "geofence_id",
-        "title": "ID первой геозоны",
+        "title": "1. ID первой геозоны",
         "r": 1,
         "w": 0
       },
       {
         "chan": "power",
         "devpropname": "power",
-        "title": "Внешнее питание, В",
+        "title": "1. Внешнее питание, В",
         "r": 1,
         "w": 0
       },
       {
         "chan": "battery",
         "devpropname": "battery",
-        "title": "Напряжение батареи, В",
+        "title": "1. Напряжение батареи, В",
         "r": 1,
         "w": 0
       },
       {
         "chan": "ignition",
         "devpropname": "ignition",
-        "title": "Зажигание",
+        "title": "1. Зажигание",
         "r": 1,
         "w": 0
       },
       {
         "chan": "motion",
         "devpropname": "motion",
-        "title": "Движение",
+        "title": "1. Движение",
         "r": 1,
         "w": 0
       },
       {
         "chan": "obd_speed",
         "devpropname": "obd_speed",
-        "title": "Скорость OBD (как в Traccar)",
+        "title": "1. Скорость OBD (как в Traccar)",
         "r": 1,
         "w": 0
       },
       {
         "chan": "rpm",
         "devpropname": "rpm",
-        "title": "Обороты двигателя",
+        "title": "1. Обороты двигателя",
         "r": 1,
         "w": 0
       },
       {
         "chan": "fuel",
         "devpropname": "fuel",
-        "title": "Топливо (как в Traccar)",
+        "title": "1. Топливо (как в Traccar)",
         "r": 1,
         "w": 0
       },
       {
         "chan": "odometer",
         "devpropname": "odometer",
-        "title": "Одометр (как в Traccar)",
+        "title": "1. Одометр (как в Traccar)",
         "r": 1,
         "w": 0
       },
       {
         "chan": "total_distance",
         "devpropname": "total_distance",
-        "title": "Дистанция Traccar, м",
+        "title": "1. Дистанция Traccar, м",
         "r": 1,
         "w": 0
       },
       {
         "chan": "protocol",
         "devpropname": "protocol",
-        "title": "Протокол",
+        "title": "1. Протокол",
         "r": 1,
         "w": 0
       },
       {
         "chan": "attributes",
         "devpropname": "attributes",
-        "title": "Атрибуты позиции (JSON)",
+        "title": "1. Атрибуты позиции (JSON)",
         "r": 1,
         "w": 0
       },
       {
         "chan": "accuracy",
         "devpropname": "accuracy",
-        "title": "Точность GPS, м",
+        "title": "1. Точность GPS, м",
         "r": 1,
         "w": 0
       },
