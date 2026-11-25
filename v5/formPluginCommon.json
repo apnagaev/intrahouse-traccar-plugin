@@ -32,6 +32,24 @@
       "title": "Интервал опроса, с",
       "type": "input",
       "default": "30"
+    },
+    {
+      "prop": "deviceId2",
+      "title": "ID второго трекера",
+      "type": "input",
+      "default": ""
+    },
+    {
+      "prop": "deviceId3",
+      "title": "ID третьего трекера",
+      "type": "input",
+      "default": ""
+    },
+    {
+      "prop": "sourceMode",
+      "title": "Источник после запуска: 0 Авто, 1 первый, 2 второй, 3 третий",
+      "type": "input",
+      "default": "0"
     }
   ]
 }
