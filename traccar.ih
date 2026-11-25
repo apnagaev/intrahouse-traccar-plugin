@@ -1,6 +1,6 @@
 {
   "id": "traccar",
   "description": "Телеметрия трекеров из Traccar",
-  "version": "5.0.3",
+  "version": "5.0.4",
   "cross": true
 }

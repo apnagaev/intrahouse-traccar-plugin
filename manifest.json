@@ -629,7 +629,7 @@
         "chan": "set_source_mode",
         "devpropname": "set_source_mode",
         "title": "0 Авто, 1 первый, 2 второй, 3 третий",
-        "r": 0,
+        "r": 1,
         "w": 1
       }
     ]
