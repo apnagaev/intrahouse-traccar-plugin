@@ -1,7 +1,7 @@
 'use strict';
 
 const numeric = value => typeof value === 'number' && Number.isFinite(value) ? value : undefined;
-const binary = value => typeof value === 'boolean' ? Number(value) : undefined;
+const binary = value => typeof value === 'boolean' ? Number(value) : [0, 1].includes(value) ? value : undefined;
 const timestamp = value => typeof value === 'string' ? numeric(Date.parse(value) / 1000) : undefined;
 
 function positionValues(position) {
@@ -13,7 +13,7 @@ function positionValues(position) {
     position_id: numeric(position.id), fix_time: timestamp(position.fixTime),
     server_time: timestamp(position.serverTime), valid: binary(position.valid),
     latitude: numeric(position.latitude), longitude: numeric(position.longitude),
-    altitude: numeric(position.altitude), course: numeric(position.course),
+    accuracy: numeric(position.accuracy), altitude: numeric(position.altitude), course: numeric(position.course),
     speed: speed === undefined ? undefined : Math.round(speed * 1852) / 1000,
     address: typeof position.address === 'string' ? position.address : '',
     geofence_ids: ids ? JSON.stringify(ids) : undefined,
@@ -29,6 +29,31 @@ function positionValues(position) {
   return Object.fromEntries(Object.entries(values).filter(([, value]) => value !== undefined));
 }
 
+function distanceKm(a, b) {
+  const rad = Math.PI / 180;
+  const h = Math.sin((b.latitude - a.latitude) * rad / 2) ** 2 +
+    Math.cos(a.latitude * rad) * Math.cos(b.latitude * rad) *
+    Math.sin((b.longitude - a.longitude) * rad / 2) ** 2;
+  return 12742 * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+function selectPosition(points, mode, previous, now) {
+  return points.find((point, index) => {
+    if (!point || (mode && mode !== index + 1)) return false;
+    const {latitude, longitude, fix_time: fix, server_time: received, speed, accuracy} = point;
+    if (point.valid !== 1 || latitude === undefined || longitude === undefined ||
+        Math.abs(latitude) > 90 || Math.abs(longitude) > 180 || (!latitude && !longitude) ||
+        fix === undefined || received === undefined || fix > now + 300 || received > now + 300 ||
+        now - Math.min(fix, received) > 300 || (speed ?? 0) > 200 || (accuracy ?? 0) > 100) {
+      return false;
+    }
+    if (!previous) return true;
+    const elapsed = Math.min(fix, received) - Math.min(previous.fix_time, previous.server_time);
+    if (elapsed < -30) return false;
+    return distanceKm(previous, point) <= Math.max(0.5, elapsed * 200 / 3600);
+  });
+}
+
 function options(params) {
   const url = new URL(String(params.url ?? '').trim());
   if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
@@ -41,11 +66,23 @@ function options(params) {
       !Number.isInteger(interval) || interval < 10 || interval > 600) {
     throw new Error('Укажите токен, числовой ID устройства и интервал 10–600 секунд');
   }
-  return {url: url.href.replace(/\/+$/, ''), deviceId, interval: interval * 1000, token};
+  if (params.deviceId3 && !params.deviceId2) throw new Error('Сначала укажите второй трекер');
+  const ids = [deviceId, ...[params.deviceId2, params.deviceId3]
+    .map(value => String(value ?? '').trim())
+    .filter(Boolean).map(Number)];
+  if (ids.some(id => !Number.isSafeInteger(id) || id < 1) || new Set(ids).size !== ids.length) {
+    throw new Error('Дополнительные ID должны быть уникальными положительными числами');
+  }
+  const mode = Number(params.sourceMode || 0);
+  if (!Number.isInteger(mode) || mode < 0 || mode > ids.length) throw new Error('Проверьте режим источника');
+  return {ids, mode, url: url.href.replace(/\/+$/, ''), deviceId, interval: interval * 1000, token};
 }
 
 function run(plugin, params, request = fetch) {
-  const {url, deviceId, interval, token} = options(params);
+  const {url, ids, interval, token, mode: defaultMode} = options(params);
+  let mode = defaultMode;
+  let accepted;
+  let points = [];
   const state = {};
   const sent = new Map();
   let channels = [];
@@ -64,6 +101,22 @@ function run(plugin, params, request = fetch) {
     for (const {id, value} of changes) sent.set(id, value);
   }
 
+  function sourceValues() {
+    const selected = selectPosition(points, mode, accepted, Date.now() / 1000);
+    if (selected) accepted = selected;
+    return {
+      source_mode: mode,
+      source_device_id: selected?.sourceId ?? 0,
+      source_ready: Number(Boolean(selected)),
+      source_fix_time: selected?.fix_time ?? 0,
+      source_latitude: selected?.latitude ?? 0,
+      source_longitude: selected?.longitude ?? 0,
+      source_address: selected?.address ?? '',
+      source_geofence_known: Number(selected?.geofence_ids !== undefined),
+      source_geofence_ids: selected?.geofence_ids ?? '[]'
+    };
+  }
+
   async function poll() {
     if (pending || stopped) return;
     pending = true;
@@ -76,18 +129,33 @@ function run(plugin, params, request = fetch) {
       if (!response.ok) throw new Error('HTTP ' + response.status);
       const positions = await response.json();
       if (!Array.isArray(positions)) throw new Error('неожиданный формат ответа');
-      const position = positions.filter(point => point?.deviceId === deviceId)
-        .sort((a, b) => b.id - a.id)[0];
+      const latest = new Map();
+      for (const position of positions) {
+        if (!position || !ids.includes(position.deviceId)) continue;
+        if (!latest.has(position.deviceId) || position.id > latest.get(position.deviceId).id) {
+          latest.set(position.deviceId, position);
+        }
+      }
       lastError = '';
-      const values = {online: 1, has_position: Number(Boolean(position))};
-      if (position) Object.assign(values, positionValues(position));
-      publish(values);
+      const values = {online: 1};
+      points = ids.map((id, index) => {
+        const prefix = index ? 'tracker' + (index + 1) + '_' : '';
+        const position = latest.get(id);
+        values[prefix + 'has_position'] = Number(Boolean(position));
+        if (!position) return undefined;
+        const point = positionValues(position);
+        for (const [key, value] of Object.entries(point)) values[prefix + key] = value;
+        return {...point, sourceId: id};
+      });
+      publish({...values, ...sourceValues()});
     } catch (error) {
       const message = /^(HTTP \d{3}|неожиданный формат ответа)$/.test(error.message)
         ? error.message : 'ошибка связи или чтения ответа';
       if (!stopped && message !== lastError) plugin.log('Traccar: ' + message);
       lastError = message;
-      publish({online: 0, has_position: 0});
+      points = [];
+      publish({online: 0, has_position: 0, tracker2_has_position: 0,
+        tracker3_has_position: 0, ...sourceValues()});
     } finally {
       pending = false;
     }
@@ -107,6 +175,16 @@ function run(plugin, params, request = fetch) {
   }
 
   const tick = () => poll().catch(() => plugin.log('Traccar: не удалось передать данные каналов'));
+  plugin.onAct?.(message => {
+    for (const action of message.data ?? []) {
+      const channel = action.chan || channels.find(item => item.id === action.id)?.chan;
+      if (channel !== 'set_source_mode' || typeof action.value === 'boolean' || action.value === '') continue;
+      const next = Number(action.value);
+      if (!Number.isInteger(next) || next < 0 || next > ids.length) continue;
+      mode = next;
+      publish(sourceValues());
+    }
+  });
   plugin.onChange?.('channels', reloadChannels);
   void reloadChannels().then(tick);
   const timer = setInterval(tick, interval);
@@ -115,3 +193,4 @@ function run(plugin, params, request = fetch) {
 
 module.exports = run;
 module.exports.positionValues = positionValues;
+module.exports.selectPosition = selectPosition;
