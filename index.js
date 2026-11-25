@@ -2,14 +2,23 @@
 
 const path = require('path');
 
+function readToken(plugin, params) {
+  const token = params.ppw_token && plugin.getPassword
+    ? plugin.getPassword(params, 'token')
+    : params.token;
+  const value = typeof token === 'string' ? token.trim() : '';
+  return /^\$\{[^}]+\}$/.test(value) ? '' : value;
+}
+
 async function main() {
   let plugin;
   try {
     const options = JSON.parse(process.argv[2]);
     plugin = require(path.join(options.pluginapi, 'index.js'))();
     const params = await plugin.params.get();
-    if (plugin.getPassword) params.token = plugin.getPassword(params, "token") ?? params.token;
-    require('./app')(plugin, params);
+    const token = readToken(plugin, params);
+    if (!token) throw new Error('Токен Traccar отсутствует. Сохраните его в параметрах экземпляра.');
+    require('./app')(plugin, {...params, token});
   } catch (error) {
     const message = 'Traccar: ' + error.message;
     if (plugin) {
