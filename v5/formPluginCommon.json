@@ -1,0 +1,37 @@
+{
+  "grid": [
+    {
+      "id": "connection",
+      "xs": 12,
+      "class": "main",
+      "table": "units"
+    }
+  ],
+  "spacing": 10,
+  "connection": [
+    {
+      "prop": "url",
+      "title": "Базовый URL Traccar",
+      "type": "input",
+      "default": ""
+    },
+    {
+      "prop": "token",
+      "title": "Токен Traccar",
+      "type": "password",
+      "default": ""
+    },
+    {
+      "prop": "deviceId",
+      "title": "Числовой ID трекера в Traccar",
+      "type": "input",
+      "default": ""
+    },
+    {
+      "prop": "pollSeconds",
+      "title": "Интервал опроса, с",
+      "type": "input",
+      "default": "30"
+    }
+  ]
+}
