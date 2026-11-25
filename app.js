@@ -106,6 +106,7 @@ function run(plugin, params, request = fetch) {
     if (selected) accepted = selected;
     return {
       source_mode: mode,
+      set_source_mode: mode,
       source_device_id: selected?.sourceId ?? 0,
       source_ready: Number(Boolean(selected)),
       source_fix_time: selected?.fix_time ?? 0,
@@ -189,7 +190,7 @@ function run(plugin, params, request = fetch) {
       }
       mode = next;
       for (const item of channels) {
-        if (item.chan === 'source_mode') sent.delete(item.id);
+        if (item.chan === 'source_mode' || item.chan === 'set_source_mode') sent.delete(item.id);
       }
       publish(sourceValues());
       plugin.log('Traccar: применён режим источника ' + mode);
