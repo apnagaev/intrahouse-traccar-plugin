@@ -1,0 +1,210 @@
+{
+  "name": "traccar",
+  "description": "Телеметрия трекеров из Traccar",
+  "module": "index.js",
+  "single": 0,
+  "nochannels": 0,
+  "spawn": 0,
+  "channel_popup": {
+    "add": [
+      {
+        "id": "channel_node_folder",
+        "title": "Набор каналов Traccar"
+      },
+      {
+        "id": "channel",
+        "title": "$NewChannel"
+      }
+    ],
+    "copypaste": true,
+    "delete": true
+  },
+  "default_channel": {
+    "chan": "online",
+    "devpropname": "online",
+    "title": "Связь с Traccar",
+    "r": 1,
+    "w": 0
+  },
+  "default_channel_node_folder": {
+    "foldertype": "node",
+    "title": "Каналы Traccar",
+    "channels": [
+      {
+        "chan": "online",
+        "devpropname": "online",
+        "title": "Связь с Traccar",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "has_position",
+        "devpropname": "has_position",
+        "title": "Есть позиция трекера",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "position_id",
+        "devpropname": "position_id",
+        "title": "ID позиции",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "fix_time",
+        "devpropname": "fix_time",
+        "title": "Время фиксации (Unix)",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "server_time",
+        "devpropname": "server_time",
+        "title": "Время приёма (Unix)",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "valid",
+        "devpropname": "valid",
+        "title": "Позиция валидна",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "latitude",
+        "devpropname": "latitude",
+        "title": "Широта",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "longitude",
+        "devpropname": "longitude",
+        "title": "Долгота",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "altitude",
+        "devpropname": "altitude",
+        "title": "Высота, м",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "course",
+        "devpropname": "course",
+        "title": "Курс, °",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "speed",
+        "devpropname": "speed",
+        "title": "Скорость GPS, км/ч",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "address",
+        "devpropname": "address",
+        "title": "Адрес",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "geofence_ids",
+        "devpropname": "geofence_ids",
+        "title": "ID геозон (JSON)",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "geofence_id",
+        "devpropname": "geofence_id",
+        "title": "ID первой геозоны",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "power",
+        "devpropname": "power",
+        "title": "Внешнее питание, В",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "battery",
+        "devpropname": "battery",
+        "title": "Напряжение батареи, В",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "ignition",
+        "devpropname": "ignition",
+        "title": "Зажигание",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "motion",
+        "devpropname": "motion",
+        "title": "Движение",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "obd_speed",
+        "devpropname": "obd_speed",
+        "title": "Скорость OBD (как в Traccar)",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "rpm",
+        "devpropname": "rpm",
+        "title": "Обороты двигателя",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "fuel",
+        "devpropname": "fuel",
+        "title": "Топливо (как в Traccar)",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "odometer",
+        "devpropname": "odometer",
+        "title": "Одометр (как в Traccar)",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "total_distance",
+        "devpropname": "total_distance",
+        "title": "Дистанция Traccar, м",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "protocol",
+        "devpropname": "protocol",
+        "title": "Протокол",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "attributes",
+        "devpropname": "attributes",
+        "title": "Атрибуты позиции (JSON)",
+        "r": 1,
+        "w": 0
+      }
+    ]
+  }
+}
