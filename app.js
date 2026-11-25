@@ -177,12 +177,22 @@ function run(plugin, params, request = fetch) {
   const tick = () => poll().catch(() => plugin.log('Traccar: не удалось передать данные каналов'));
   plugin.onAct?.(message => {
     for (const action of message.data ?? []) {
-      const channel = action.chan || channels.find(item => item.id === action.id)?.chan;
-      if (channel !== 'set_source_mode' || typeof action.value === 'boolean' || action.value === '') continue;
-      const next = Number(action.value);
-      if (!Number.isInteger(next) || next < 0 || next > ids.length) continue;
+      const binding = channels.find(item => item.id === action.id);
+      const channel = binding?.chan ?? action.chan ?? action.devpropname ?? action.prop;
+      if (channel !== 'set_source_mode' && !String(channel).endsWith('.set_source_mode')) continue;
+      const raw = action.value;
+      const next = typeof raw === 'number' || (typeof raw === 'string' && raw.trim())
+        ? Number(raw) : NaN;
+      if (!Number.isInteger(next) || next < 0 || next > ids.length) {
+        plugin.log('Traccar: режим источника отклонён. Проверьте значение и ID трекеров.');
+        continue;
+      }
       mode = next;
+      for (const item of channels) {
+        if (item.chan === 'source_mode') sent.delete(item.id);
+      }
       publish(sourceValues());
+      plugin.log('Traccar: применён режим источника ' + mode);
     }
   });
   plugin.onChange?.('channels', reloadChannels);
