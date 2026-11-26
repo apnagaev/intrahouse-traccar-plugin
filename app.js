@@ -3,7 +3,11 @@
 const numeric = value => typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 const binary = value => typeof value === 'boolean' ? Number(value) : [0, 1].includes(value) ? value : undefined;
 const attributeNumber = value => typeof value === 'string' && value.trim() ? numeric(Number(value)) : numeric(value);
-const timestamp = value => typeof value === 'string' ? numeric(Date.parse(value) / 1000) : undefined;
+function timestamp(value) {
+  if (typeof value === 'string' && value.trim()) return numeric(Date.parse(value) / 1000);
+  if (!Number.isFinite(value) || value <= 0) return undefined;
+  return value >= 1e12 ? value / 1000 : value;
+}
 
 function positionValues(position) {
   const attr = position.attributes ?? {};
@@ -37,13 +41,25 @@ function comparePoints(a, b) {
     (a.position_id ?? 0) - (b.position_id ?? 0);
 }
 
+function pointTime(point, now) {
+  const {fix_time: fix, server_time: received} = point;
+  if (fix === undefined || fix > now + 300 || (received !== undefined && fix > received + 300)) {
+    return received ?? fix;
+  }
+  return fix;
+}
+
 function sourceSnapshot(points, mode, now) {
-  const point = points.reduce((selected, point, index) => {
-    if (!point || (mode && mode !== index + 1) || !Number.isFinite(point.fix_time) ||
-        point.fix_time > now + 300) return selected;
-    return !selected || comparePoints(point, selected) > 0 ? point : selected;
+  const selected = points.reduce((selected, point, index) => {
+    if (!point || (mode && mode !== index + 1)) return selected;
+    const time = pointTime(point, now);
+    if (!Number.isFinite(time)) return selected;
+    return !selected || time > selected.time ||
+      (time === selected.time && (point.server_time ?? 0) > (selected.point.server_time ?? 0))
+      ? {point, time} : selected;
   }, undefined);
-  if (!point) return null;
+  if (!selected) return null;
+  const {point, time} = selected;
   const attr = JSON.parse(point.attributes);
   const coordinates = point.valid === 1 && Number.isFinite(point.latitude) &&
     Number.isFinite(point.longitude) && Math.abs(point.latitude) <= 90 &&
@@ -52,8 +68,9 @@ function sourceSnapshot(points, mode, now) {
     .find(value => Number.isFinite(value) && value >= 0);
   return {
     deviceId: point.sourceId,
-    timestamp: point.fix_time,
-    fresh: now - Math.min(point.fix_time, point.server_time ?? point.fix_time) <= 300,
+    timestamp: time,
+    timestampSource: time === point.fix_time ? 'fixTime' : 'serverTime',
+    fresh: time <= now + 300 && now - Math.min(time, point.server_time ?? time) <= 300,
     latitude: coordinates ? point.latitude : undefined,
     longitude: coordinates ? point.longitude : undefined,
     address: point.address || undefined,
@@ -214,11 +231,17 @@ function run(plugin, params, request = fetch) {
       const positions = await response.json();
       if (!Array.isArray(positions)) throw new Error('неожиданный формат ответа');
       const latest = new Map();
+      const now = Date.now() / 1000;
       for (const position of positions) {
-        if (!position || !ids.includes(position.deviceId)) continue;
+        const id = Number(position?.deviceId);
+        if (!ids.includes(id)) continue;
         const point = positionValues(position);
-        const prior = latest.get(position.deviceId);
-        if (!prior || comparePoints(point, prior) > 0) latest.set(position.deviceId, point);
+        const prior = latest.get(id);
+        const time = pointTime(point, now) ?? -Infinity;
+        const priorTime = prior ? pointTime(prior, now) ?? -Infinity : -Infinity;
+        if (!prior || time > priorTime || (time === priorTime && comparePoints(point, prior) > 0)) {
+          latest.set(id, point);
+        }
       }
       lastError = '';
       const values = {online: 1};
@@ -266,6 +289,9 @@ function run(plugin, params, request = fetch) {
       if (stopped || revision !== loadRevision) return;
       channels = list.filter(item => item.id && item.chan);
       sent.clear();
+      if (!channels.some(item => item.chan === 'source_snapshot')) {
+        plugin.log('Traccar: канал source_snapshot не привязан. Проверьте конфигурацию проекта.');
+      }
       publish({});
     } catch {
       if (!stopped) plugin.log('Traccar: не удалось загрузить каналы');
