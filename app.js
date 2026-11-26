@@ -4,7 +4,11 @@ const numeric = value => typeof value === 'number' && Number.isFinite(value) ? v
 const binary = value => typeof value === 'boolean' ? Number(value) : [0, 1].includes(value) ? value : undefined;
 const attributeNumber = value => typeof value === 'string' && value.trim() ? numeric(Number(value)) : numeric(value);
 function timestamp(value) {
-  if (typeof value === 'string' && value.trim()) return numeric(Date.parse(value) / 1000);
+  if (typeof value === 'string' && value.trim()) {
+    const input = value.trim();
+    if (/^\d+(?:\.\d+)?$/.test(input)) return timestamp(Number(input));
+    return numeric(Date.parse(input) / 1000);
+  }
   if (!Number.isFinite(value) || value <= 0) return undefined;
   return value >= 1e12 ? value / 1000 : value;
 }
@@ -161,12 +165,14 @@ function run(plugin, params, request = fetch) {
     pending = true;
     try {
       const latest = new Map();
+      let invalidTimes = 0;
+      let visibleIds = [];
       function addPositions(rows) {
         for (const row of rows) {
           const index = ids.indexOf(Number(row?.deviceId));
           if (index < 0) continue;
           const point = pointValues(row, index);
-          if (!point) continue;
+          if (!point) { invalidTimes++; continue; }
           const previous = latest.get(point.deviceId);
           if (!previous || compare(point, previous) < 0) latest.set(point.deviceId, point);
         }
@@ -175,6 +181,7 @@ function run(plugin, params, request = fetch) {
       if (latest.size < ids.length) {
         try {
           const devices = await getRows('/api/devices');
+          visibleIds = devices.map(device => Number(device?.id)).filter(Number.isSafeInteger);
           const positionIds = devices.filter(device => {
             const id = Number(device?.id);
             return ids.includes(id) && !latest.has(id);
@@ -183,12 +190,24 @@ function run(plugin, params, request = fetch) {
             const query = new URLSearchParams(positionIds.map(id => ['id', String(id)]));
             addPositions(await getRows('/api/positions?' + query));
           }
+          const to = new Date();
+          const from = new Date(to.getTime() - 10 * 60 * 1000);
+          for (const id of ids) {
+            if (stopped) return;
+            if (latest.has(id) || !visibleIds.includes(id)) continue;
+            const query = new URLSearchParams({deviceId: String(id), from: from.toISOString(), to: to.toISOString()});
+            addPositions(await getRows('/api/positions?' + query));
+          }
         } catch (error) {
           if (latest.size === 0) throw error;
         }
       }
       points = latest;
-      status = {online: true, error: latest.size ? '' : 'Traccar не вернул точки настроенных устройств'};
+      status = {online: true, error: latest.size ? '' : invalidTimes
+        ? `Получено строк без корректного serverTime: ${invalidTimes}`
+        : visibleIds.some(id => ids.includes(id))
+          ? `Нет последних точек и точек за 10 минут. Настроены ID: ${ids.join(', ')}`
+          : `Настроены ID: ${ids.join(', ')}. Доступные ID Traccar: ${visibleIds.join(', ') || 'нет'}`};
     } catch (error) {
       const message = /^(HTTP \d{3}|неожиданный формат ответа)$/.test(error.message)
         ? error.message : 'ошибка связи или чтения ответа';
