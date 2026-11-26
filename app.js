@@ -27,7 +27,7 @@ function pointValues(position, trackerIndex) {
   const engineRunning = ['Ra', 'Rm'].includes(attrs.astart) ? true
     : rpm !== undefined ? rpm > 0 : ignition === 0 ? false : undefined;
   return {
-    deviceId, serverTime, positionId: Number(position.id) || 0,
+    deviceId, serverTime, raw: position, positionId: Number(position.id) || 0,
     fields: {
       latitude: gpsValid ? latitude : undefined,
       longitude: gpsValid ? longitude : undefined,
@@ -85,23 +85,20 @@ function options(params) {
   if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
     throw new Error('Укажите базовый URL Traccar без учётных данных и параметров');
   }
-  const deviceId = Number(params.deviceId);
+  const input = String(params.trackerIds ?? '').trim() || [params.deviceId, params.deviceId2, params.deviceId3].filter(Boolean).join(',');
+  const ids = input.split(',').map(value => Number(value.trim()));
   const interval = Number(params.pollSeconds ?? 30);
   const token = String(params.token ?? '').trim();
-  if (!Number.isSafeInteger(deviceId) || deviceId < 1 || !token ||
+  if (!token ||
       !Number.isInteger(interval) || interval < 10 || interval > 600) {
     throw new Error('Укажите токен, числовой ID устройства и интервал 10–600 секунд');
   }
-  if (params.deviceId3 && !params.deviceId2) throw new Error('Сначала укажите второй трекер');
-  const ids = [deviceId, ...[params.deviceId2, params.deviceId3]
-    .map(value => String(value ?? '').trim())
-    .filter(Boolean).map(Number)];
   if (ids.some(id => !Number.isSafeInteger(id) || id < 1) || new Set(ids).size !== ids.length) {
     throw new Error('Дополнительные ID должны быть уникальными положительными числами');
   }
   const mode = Number(params.sourceMode || 0);
   if (!Number.isInteger(mode) || mode < 0 || mode > ids.length) throw new Error('Проверьте режим источника');
-  return {ids, mode, url: url.href.replace(/\/+$/, ''), deviceId, interval: interval * 1000, token};
+  return {ids, mode, url: url.href.replace(/\/+$/, ''), interval: interval * 1000, token};
 }
 
 const CHANNEL = 'source_snapshot';
@@ -111,18 +108,40 @@ function run(plugin, params, request = fetch) {
   let mode = initialMode;
   let points = new Map();
   let status = {online: false, error: 'Ожидание ответа Traccar'};
-  let channel;
-  let sent;
+  let channels = [];
+  const sent = new Map();
   let stopped = false;
   let pending = false;
   let loadRevision = 0;
 
   function publish() {
-    if (stopped || !channel) return;
-    const value = JSON.stringify(snapshot(points, ids, mode, Date.now() / 1000, status));
-    if (value === sent) return;
-    plugin.sendData([{id: channel.id, value}]);
-    sent = value;
+    if (stopped) return;
+    const packet = snapshot(points, ids, mode, Date.now() / 1000, status);
+    const ordered = [...points.values()].sort(compare);
+    const preferred = points.get(ids[mode - 1]);
+    if (preferred) ordered.unshift(preferred);
+    const changes = [];
+    for (const channel of channels) {
+      let value;
+      if (channel.chan === CHANNEL) value = JSON.stringify(packet);
+      else {
+        const path = String(channel.jsonPath || channel.chan).trim().split('.');
+        for (const point of ordered) {
+          value = point.raw;
+          for (const key of path) {
+            value = value != null && Object.hasOwn(value, key) ? value[key] : undefined;
+          }
+          if (value != null && value !== '') break;
+        }
+        if (value == null || value === '') value = null;
+        else if (typeof value === 'object') value = JSON.stringify(value);
+      }
+      if (sent.get(channel.id) !== value) changes.push({id:channel.id, value});
+    }
+    if (changes.length) {
+      plugin.sendData(changes);
+      for (const item of changes) sent.set(item.id, item.value);
+    }
   }
 
   async function getRows(path) {
@@ -186,9 +205,8 @@ function run(plugin, params, request = fetch) {
     try {
       const list = await plugin.channels.get();
       if (stopped || revision !== loadRevision) return;
-      channel = list.find(item => item.id && item.chan === CHANNEL);
-      if (!channel) plugin.log('Traccar: канал ' + CHANNEL + ' не привязан');
-      sent = undefined;
+      channels = list.filter(item => item.id && item.chan);
+      sent.clear();
       publish();
     } catch {
       if (!stopped) plugin.log('Traccar: не удалось загрузить канал');
@@ -197,6 +215,7 @@ function run(plugin, params, request = fetch) {
 
   const tick = () => poll().catch(() => plugin.log('Traccar: не удалось передать данные'));
   plugin.onAct?.(message => {
+    const channel = channels.find(item => item.chan === CHANNEL);
     if (!channel) return;
     for (const action of message.data ?? []) {
       if (action.id ? action.id !== channel.id : action.chan !== CHANNEL && action.prop !== CHANNEL) continue;
@@ -205,7 +224,7 @@ function run(plugin, params, request = fetch) {
       const next = command?.mode;
       if (!Number.isInteger(next) || next < 0 || next > ids.length) continue;
       mode = next;
-      sent = undefined;
+      sent.delete(channel.id);
       publish();
     }
   });
