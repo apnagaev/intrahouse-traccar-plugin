@@ -154,7 +154,11 @@ function run(plugin, params, request = fetch) {
       redirect: 'error',
       signal: AbortSignal.timeout(8000)
     });
-    if (!response.ok) throw new Error('HTTP ' + response.status);
+    if (!response.ok) {
+      const error = new Error('HTTP ' + response.status + ' GET ' + path);
+      error.status = response.status;
+      throw error;
+    }
     const rows = await response.json();
     if (!Array.isArray(rows)) throw new Error('неожиданный формат ответа');
     return rows;
@@ -177,10 +181,20 @@ function run(plugin, params, request = fetch) {
           if (!previous || compare(point, previous) < 0) latest.set(point.deviceId, point);
         }
       }
-      addPositions(await getRows('/api/positions'));
+      const rejected = [];
+      async function read(path) {
+        try {
+          return await getRows(path);
+        } catch (error) {
+          if (error.status !== 400) throw error;
+          rejected.push(error.message);
+          return [];
+        }
+      }
+      addPositions(await read('/api/positions'));
       if (latest.size < ids.length) {
         try {
-          const devices = await getRows('/api/devices');
+          const devices = await read('/api/devices');
           visibleIds = devices.map(device => Number(device?.id)).filter(Number.isSafeInteger);
           const positionIds = devices.filter(device => {
             const id = Number(device?.id);
@@ -188,20 +202,21 @@ function run(plugin, params, request = fetch) {
           }).map(device => Number(device.positionId)).filter(id => Number.isSafeInteger(id) && id > 0);
           if (positionIds.length) {
             const query = new URLSearchParams(positionIds.map(id => ['id', String(id)]));
-            addPositions(await getRows('/api/positions?' + query));
+            addPositions(await read('/api/positions?' + query));
           }
           const to = new Date();
           const from = new Date(to.getTime() - 10 * 60 * 1000);
           for (const id of ids) {
             if (stopped) return;
-            if (latest.has(id) || !visibleIds.includes(id)) continue;
-            const query = new URLSearchParams({deviceId: String(id), from: from.toISOString(), to: to.toISOString()});
-            addPositions(await getRows('/api/positions?' + query));
+            if (latest.has(id) || (visibleIds.length && !visibleIds.includes(id))) continue;
+            const query = new URLSearchParams({deviceId: String(id), from: from.toISOString().replace(/\.\d{3}Z$/, 'Z'), to: to.toISOString().replace(/\.\d{3}Z$/, 'Z')});
+            addPositions(await read('/api/positions?' + query));
           }
         } catch (error) {
           if (latest.size === 0) throw error;
         }
       }
+      if (!latest.size && rejected.length) throw new Error(rejected[0]);
       points = latest;
       status = {online: true, error: latest.size ? '' : invalidTimes
         ? `Получено строк без корректного serverTime: ${invalidTimes}`
@@ -209,7 +224,7 @@ function run(plugin, params, request = fetch) {
           ? `Нет последних точек и точек за 10 минут. Настроены ID: ${ids.join(', ')}`
           : `Настроены ID: ${ids.join(', ')}. Доступные ID Traccar: ${visibleIds.join(', ') || 'нет'}`};
     } catch (error) {
-      const message = /^(HTTP \d{3}|неожиданный формат ответа)$/.test(error.message)
+      const message = /^(HTTP \d{3} GET \/api\/[^\s]+|неожиданный формат ответа)$/.test(error.message)
         ? error.message : 'ошибка связи или чтения ответа';
       if (!stopped && message !== status.error) plugin.log('Traccar: ' + message);
       status = {online: false, error: message};
