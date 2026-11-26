@@ -102,7 +102,7 @@ function options(params) {
   }
   const mode = Number(params.sourceMode || 0);
   if (!Number.isInteger(mode) || mode < 0 || mode > ids.length) throw new Error('Проверьте режим источника');
-  return {ids, mode, url: url.href.replace(/\/+$/, ''), interval: interval * 1000, token};
+  return {ids, mode, url: url.href.replace(/\/+$/, '').replace(/\/api$/, ''), interval: interval * 1000, token};
 }
 
 const CHANNEL = 'source_snapshot';
