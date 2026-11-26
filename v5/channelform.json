@@ -1,0 +1,27 @@
+{
+  "grid": [
+    {
+      "id": "field",
+      "xs": 12,
+      "class": "main",
+      "table": "devhard"
+    }
+  ],
+  "field": [
+    {
+      "prop": "title",
+      "title": "Название",
+      "type": "input"
+    },
+    {
+      "prop": "chan",
+      "title": "Канал",
+      "type": "input"
+    },
+    {
+      "prop": "jsonPath",
+      "title": "Путь JSON (например attributes.rpm)",
+      "type": "input"
+    }
+  ]
+}

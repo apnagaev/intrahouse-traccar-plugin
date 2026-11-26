@@ -20,11 +20,11 @@
     "delete": true
   },
   "default_channel": {
-    "chan": "source_snapshot",
-    "devpropname": "source_snapshot",
-    "title": "Телеметрия Traccar и выбор режима",
+    "chan": "field",
+    "jsonPath": "",
+    "title": "Поле Traccar",
     "r": 1,
-    "w": 1
+    "w": 0
   },
   "default_channel_node_folder": {
     "foldertype": "node",
@@ -36,6 +36,166 @@
         "title": "Телеметрия Traccar и выбор режима",
         "r": 1,
         "w": 1
+      },
+      {
+        "chan": "deviceId",
+        "jsonPath": "deviceId",
+        "title": "ID устройства",
+        "devpropname": "deviceId",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "serverTime",
+        "jsonPath": "serverTime",
+        "title": "Время получения",
+        "devpropname": "serverTime",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "fixTime",
+        "jsonPath": "fixTime",
+        "title": "Время GPS",
+        "devpropname": "fixTime",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "latitude",
+        "jsonPath": "latitude",
+        "title": "Широта",
+        "devpropname": "latitude",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "longitude",
+        "jsonPath": "longitude",
+        "title": "Долгота",
+        "devpropname": "longitude",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "address",
+        "jsonPath": "address",
+        "title": "Адрес",
+        "devpropname": "address",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "speed",
+        "jsonPath": "speed",
+        "title": "Скорость (узлы)",
+        "devpropname": "speed",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "course",
+        "jsonPath": "course",
+        "title": "Курс",
+        "devpropname": "course",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "altitude",
+        "jsonPath": "altitude",
+        "title": "Высота",
+        "devpropname": "altitude",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "accuracy",
+        "jsonPath": "accuracy",
+        "title": "Точность",
+        "devpropname": "accuracy",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "geofenceIds",
+        "jsonPath": "geofenceIds",
+        "title": "Геозоны",
+        "devpropname": "geofenceIds",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "attributes_power",
+        "jsonPath": "attributes.power",
+        "title": "Напряжение",
+        "devpropname": "attributes_power",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "attributes_ignition",
+        "jsonPath": "attributes.ignition",
+        "title": "Зажигание",
+        "devpropname": "attributes_ignition",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "attributes_motion",
+        "jsonPath": "attributes.motion",
+        "title": "Движение",
+        "devpropname": "attributes_motion",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "attributes_rpm",
+        "jsonPath": "attributes.rpm",
+        "title": "Обороты",
+        "devpropname": "attributes_rpm",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "attributes_fuel",
+        "jsonPath": "attributes.fuel",
+        "title": "Топливо (исходное значение)",
+        "devpropname": "attributes_fuel",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "attributes_odometer",
+        "jsonPath": "attributes.odometer",
+        "title": "Одометр (м)",
+        "devpropname": "attributes_odometer",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "attributes_engine_temp",
+        "jsonPath": "attributes.engine_temp",
+        "title": "Температура двигателя",
+        "devpropname": "attributes_engine_temp",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "attributes_cabin_temp",
+        "jsonPath": "attributes.cabin_temp",
+        "title": "Температура салона",
+        "devpropname": "attributes_cabin_temp",
+        "r": 1,
+        "w": 0
+      },
+      {
+        "chan": "attributes_ECO",
+        "jsonPath": "attributes.ECO",
+        "title": "ECO",
+        "devpropname": "attributes_ECO",
+        "r": 1,
+        "w": 0
       }
     ]
   }
