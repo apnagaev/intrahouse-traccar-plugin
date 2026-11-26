@@ -30,8 +30,6 @@ function pointValues(position, trackerIndex) {
   const ignition = binary(attrs.ignition) ?? binary(attributeNumber(attrs.ignition));
   const engineRunning = ['Ra', 'Rm'].includes(attrs.astart) ? true
     : rpm !== undefined ? rpm > 0 : ignition === 0 ? false : undefined;
-  const odometer = attributeNumber(attrs.odometer);
-  const totalDistance = attributeNumber(attrs.totalDistance);
   return {
     deviceId, serverTime, raw: position, positionId: Number(position.id) || 0,
     fields: {
@@ -50,12 +48,12 @@ function pointValues(position, trackerIndex) {
       cabinTemp: attributeNumber(attrs.cabin_temp ?? attrs.cabinTemp),
       intakeTemp: attributeNumber(attrs.intake_air_temp ?? attrs.intakeTemp),
       throttle: attributeNumber(attrs.throttle_position ?? attrs.throttle),
-      fuel: attributeNumber(attrs.fuelLitres ?? attrs.fuel),
+      fuel: attributeNumber(attrs.fuelLitres ?? (trackerIndex === 1 ? attrs.fuel : undefined)),
       fuelAverage: attributeNumber(attrs.fuel_average),
       fuelRange: attributeNumber(attrs.fuel_range),
       fuelDistance: attributeNumber(attrs.fuel_distance),
       eco: attributeNumber(attrs.ECO ?? attrs.eco),
-      odometerKm: odometer !== undefined ? odometer / 1000 : totalDistance
+      odometerKm: attributeNumber(attrs.odometer) === undefined ? undefined : Number(attrs.odometer) / 1000
     }
   };
 }
@@ -193,34 +191,7 @@ function run(plugin, params, request = fetch) {
           return [];
         }
       }
-
-      // 1. Все последние позиции одним запросом
       addPositions(await read('/api/positions'));
-
-      // 2. ★ Голый ?deviceId= — форма, подтверждённая на whereit.ru рабочим curl
-      for (const id of ids) {
-        if (stopped) return;
-        if (latest.has(id)) continue;
-        addPositions(await read('/api/positions?deviceId=' + id));
-      }
-
-      // 3. Стандартный Traccar: deviceId требует from/to (для совместимости)
-      if (latest.size < ids.length) {
-        const to = new Date();
-        const from = new Date(to.getTime() - 10 * 60 * 1000);
-        for (const id of ids) {
-          if (stopped) return;
-          if (latest.has(id)) continue;
-          const query = new URLSearchParams({
-            deviceId: String(id),
-            from: from.toISOString().replace(/\.\d{3}Z$/, 'Z'),
-            to: to.toISOString().replace(/\.\d{3}Z$/, 'Z')
-          });
-          addPositions(await read('/api/positions?' + query));
-        }
-      }
-
-      // 4. Резерв через positionId из /api/devices
       if (latest.size < ids.length) {
         try {
           const devices = await read('/api/devices');
@@ -233,11 +204,18 @@ function run(plugin, params, request = fetch) {
             const query = new URLSearchParams(positionIds.map(id => ['id', String(id)]));
             addPositions(await read('/api/positions?' + query));
           }
+          const to = new Date();
+          const from = new Date(to.getTime() - 10 * 60 * 1000);
+          for (const id of ids) {
+            if (stopped) return;
+            if (latest.has(id) || (visibleIds.length && !visibleIds.includes(id))) continue;
+            const query = new URLSearchParams({deviceId: String(id), from: from.toISOString().replace(/\.\d{3}Z$/, 'Z'), to: to.toISOString().replace(/\.\d{3}Z$/, 'Z')});
+            addPositions(await read('/api/positions?' + query));
+          }
         } catch (error) {
           if (latest.size === 0) throw error;
         }
       }
-
       if (!latest.size && rejected.length) throw new Error(rejected[0]);
       points = latest;
       status = {online: true, error: latest.size ? '' : invalidTimes
