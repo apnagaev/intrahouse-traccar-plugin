@@ -30,6 +30,8 @@ function pointValues(position, trackerIndex) {
   const ignition = binary(attrs.ignition) ?? binary(attributeNumber(attrs.ignition));
   const engineRunning = ['Ra', 'Rm'].includes(attrs.astart) ? true
     : rpm !== undefined ? rpm > 0 : ignition === 0 ? false : undefined;
+  const odometer = attributeNumber(attrs.odometer);
+  const totalDistance = attributeNumber(attrs.totalDistance);
   return {
     deviceId, serverTime, raw: position, positionId: Number(position.id) || 0,
     fields: {
@@ -48,12 +50,12 @@ function pointValues(position, trackerIndex) {
       cabinTemp: attributeNumber(attrs.cabin_temp ?? attrs.cabinTemp),
       intakeTemp: attributeNumber(attrs.intake_air_temp ?? attrs.intakeTemp),
       throttle: attributeNumber(attrs.throttle_position ?? attrs.throttle),
-      fuel: attributeNumber(attrs.fuelLitres ?? (trackerIndex === 1 ? attrs.fuel : undefined)),
+      fuel: attributeNumber(attrs.fuelLitres ?? attrs.fuel),
       fuelAverage: attributeNumber(attrs.fuel_average),
       fuelRange: attributeNumber(attrs.fuel_range),
       fuelDistance: attributeNumber(attrs.fuel_distance),
       eco: attributeNumber(attrs.ECO ?? attrs.eco),
-      odometerKm: attributeNumber(attrs.odometer) === undefined ? undefined : Number(attrs.odometer) / 1000
+      odometerKm: odometer !== undefined ? odometer / 1000 : totalDistance
     }
   };
 }
@@ -105,6 +107,32 @@ function options(params) {
   return {ids, mode, url: url.href.replace(/\/+$/, ''), interval: interval * 1000, token};
 }
 
+// ---------------------------------------------------------------------------
+// DEBUG: диагностика токена без утечки его в лог.
+// fp — djb2-отпечаток (можно сравнить с эталоном: 177 симв. → сравните fp вручную).
+// +/= etc — счётчики символов: если sp>0 или ctrl>0, токен испорчен при передаче.
+// ---------------------------------------------------------------------------
+function tokenDiag(t) {
+  let h = 5381;
+  let spaces = 0, plus = 0, slash = 0, eq = 0, dash = 0, underscore = 0, ctrl = 0, nonAscii = 0;
+  for (let i = 0; i < t.length; i++) {
+    const code = t.charCodeAt(i);
+    h = ((h * 33) ^ code) >>> 0;
+    const c = t[i];
+    if (c === ' ') spaces++;
+    else if (c === '+') plus++;
+    else if (c === '/') slash++;
+    else if (c === '=') eq++;
+    else if (c === '-') dash++;
+    else if (c === '_') underscore++;
+    else if (code < 0x20 || code === 0x7f) ctrl++;
+    else if (code > 0x7e) nonAscii++;
+  }
+  return `len=${t.length} fp=${h.toString(16).padStart(8, '0')} ` +
+    `first=${JSON.stringify(t.slice(0, 8))} last=${JSON.stringify(t.slice(-4))} ` +
+    `+${plus} /${slash} =${eq} -${dash} _${underscore} sp=${spaces} ctrl=${ctrl} hi=${nonAscii}`;
+}
+
 const CHANNEL = 'source_snapshot';
 
 function run(plugin, params, request = fetch) {
@@ -117,6 +145,18 @@ function run(plugin, params, request = fetch) {
   let stopped = false;
   let pending = false;
   let loadRevision = 0;
+
+  // -------------------------------------------------------------------------
+  // DEBUG: первые N поллов подробно пишем в лог, потом тишина.
+  // -------------------------------------------------------------------------
+  const DIAG_POLLS = 3;
+  let diagCounter = 0;
+
+  plugin.log('Traccar diag: url=' + url + ' ids=' + JSON.stringify(ids) +
+    ' interval=' + Math.round(interval / 1000) + 's mode=' + mode);
+  plugin.log('Traccar diag: params keys=' + Object.keys(params).join(',') +
+    ' rawTokenLen=' + String(params.token ?? '').length);
+  plugin.log('Traccar diag: token ' + tokenDiag(token));
 
   function publish() {
     if (stopped) return;
@@ -149,14 +189,27 @@ function run(plugin, params, request = fetch) {
   }
 
   async function getRows(path) {
-    const response = await request(url + path, {
-      headers: {Authorization: 'Bearer ' + token, Accept: 'application/json'},
-      redirect: 'error',
-      signal: AbortSignal.timeout(8000)
-    });
+    let response;
+    try {
+      response = await request(url + path, {
+        headers: {Authorization: 'Bearer ' + token, Accept: 'application/json'},
+        redirect: 'error',
+        signal: AbortSignal.timeout(8000)
+      });
+    } catch (netError) {
+      const error = new Error('NET ' + path);
+      error.status = 0;
+      error.body = String(netError && netError.message || netError || '');
+      throw error;
+    }
     if (!response.ok) {
+      let body = '';
+      try {
+        body = (await response.text()).slice(0, 400).replace(/\s+/g, ' ');
+      } catch { /* ignore */ }
       const error = new Error('HTTP ' + response.status + ' GET ' + path);
       error.status = response.status;
+      error.body = body;
       throw error;
     }
     const rows = await response.json();
@@ -167,10 +220,14 @@ function run(plugin, params, request = fetch) {
   async function poll() {
     if (pending || stopped) return;
     pending = true;
+    const verbose = diagCounter < DIAG_POLLS;
     try {
       const latest = new Map();
       let invalidTimes = 0;
       let visibleIds = [];
+      const rejected = [];  // {path, body}
+      if (verbose) plugin.log('Traccar diag: poll #' + (diagCounter + 1));
+
       function addPositions(rows) {
         for (const row of rows) {
           const index = ids.indexOf(Number(row?.deviceId));
@@ -181,17 +238,53 @@ function run(plugin, params, request = fetch) {
           if (!previous || compare(point, previous) < 0) latest.set(point.deviceId, point);
         }
       }
-      const rejected = [];
+
       async function read(path) {
+        if (verbose) plugin.log('Traccar → ' + path);
         try {
-          return await getRows(path);
+          const rows = await getRows(path);
+          if (verbose) plugin.log('Traccar ← ' + path + ' rows=' + rows.length);
+          return rows;
         } catch (error) {
-          if (error.status !== 400) throw error;
-          rejected.push(error.message);
+          if (error.status !== 400) {
+            if (verbose) plugin.log('Traccar ← ' + path + ' FAIL ' +
+              (error.status || error.name) + (error.body ? ' [' + error.body.slice(0, 200) + ']' : ''));
+            throw error;
+          }
+          rejected.push({path: error.message, body: error.body || ''});
+          if (verbose) plugin.log('Traccar ← ' + path + ' 400' +
+            (error.body ? ' [' + error.body.slice(0, 150) + ']' : ''));
           return [];
         }
       }
+
+      // 1. Все последние позиции
       addPositions(await read('/api/positions'));
+
+      // 2. Голый ?deviceId= — форма, подтверждённая рабочим curl
+      for (const id of ids) {
+        if (stopped) return;
+        if (latest.has(id)) continue;
+        addPositions(await read('/api/positions?deviceId=' + id));
+      }
+
+      // 3. Стандартный Traccar: deviceId + from/to (совместимость)
+      if (latest.size < ids.length) {
+        const to = new Date();
+        const from = new Date(to.getTime() - 10 * 60 * 1000);
+        for (const id of ids) {
+          if (stopped) return;
+          if (latest.has(id)) continue;
+          const query = new URLSearchParams({
+            deviceId: String(id),
+            from: from.toISOString().replace(/\.\d{3}Z$/, 'Z'),
+            to: to.toISOString().replace(/\.\d{3}Z$/, 'Z')
+          });
+          addPositions(await read('/api/positions?' + query));
+        }
+      }
+
+      // 4. Резерв через positionId из /api/devices
       if (latest.size < ids.length) {
         try {
           const devices = await read('/api/devices');
@@ -204,19 +297,23 @@ function run(plugin, params, request = fetch) {
             const query = new URLSearchParams(positionIds.map(id => ['id', String(id)]));
             addPositions(await read('/api/positions?' + query));
           }
-          const to = new Date();
-          const from = new Date(to.getTime() - 10 * 60 * 1000);
-          for (const id of ids) {
-            if (stopped) return;
-            if (latest.has(id) || (visibleIds.length && !visibleIds.includes(id))) continue;
-            const query = new URLSearchParams({deviceId: String(id), from: from.toISOString().replace(/\.\d{3}Z$/, 'Z'), to: to.toISOString().replace(/\.\d{3}Z$/, 'Z')});
-            addPositions(await read('/api/positions?' + query));
-          }
         } catch (error) {
           if (latest.size === 0) throw error;
         }
       }
-      if (!latest.size && rejected.length) throw new Error(rejected[0]);
+
+      if (verbose) {
+        plugin.log('Traccar diag: latest=' + latest.size + '/' + ids.length +
+          ' rejected=' + rejected.length + ' visibleIds=' + JSON.stringify(visibleIds) +
+          ' invalidTimes=' + invalidTimes);
+      }
+
+      if (!latest.size && rejected.length) {
+        plugin.log('Traccar diag: все запросы упали:\n  ' +
+          rejected.map(item => item.path + (item.body ? ' [' + item.body + ']' : '')).join('\n  '));
+        throw new Error(rejected[0].path);
+      }
+
       points = latest;
       status = {online: true, error: latest.size ? '' : invalidTimes
         ? `Получено строк без корректного serverTime: ${invalidTimes}`
@@ -224,12 +321,13 @@ function run(plugin, params, request = fetch) {
           ? `Нет последних точек и точек за 10 минут. Настроены ID: ${ids.join(', ')}`
           : `Настроены ID: ${ids.join(', ')}. Доступные ID Traccar: ${visibleIds.join(', ') || 'нет'}`};
     } catch (error) {
-      const message = /^(HTTP \d{3} GET \/api\/[^\s]+|неожиданный формат ответа)$/.test(error.message)
+      const message = /^(HTTP \d{3} GET \/api\/[^\s]+|NET \/api\/[^\s]+|неожиданный формат ответа)$/.test(error.message)
         ? error.message : 'ошибка связи или чтения ответа';
       if (!stopped && message !== status.error) plugin.log('Traccar: ' + message);
       status = {online: false, error: message};
     } finally {
       pending = false;
+      if (diagCounter < DIAG_POLLS) diagCounter++;
     }
     publish();
   }
@@ -271,3 +369,4 @@ function run(plugin, params, request = fetch) {
 module.exports = run;
 module.exports.pointValues = pointValues;
 module.exports.snapshot = snapshot;
+module.exports.tokenDiag = tokenDiag;
