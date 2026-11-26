@@ -63,7 +63,9 @@ function driveValues(points, now, lastFix) {
         point.fix_time > now + 30 || point.fix_time < lastFix) return undefined;
     const values = {};
     if (point.power !== undefined) values.drive_voltage = point.power;
-    if (point.obd_speed !== undefined) values.drive_speed = point.obd_speed;
+    const gps = point.valid === 1 ? point.speed : undefined;
+    const speed = [gps, point.obd_speed].find(value => Number.isFinite(value) && value >= 0 && value <= 200);
+    if (speed !== undefined) values.drive_speed = speed;
     if (point.ignition !== undefined) values.drive_ignition = point.ignition;
     if (index === 1 && ['Ra', 'Rm'].includes(point.engine_mode)) values.drive_engine = 1;
     else if (point.ignition === 0 || (index === 1 && point.engine_mode === '')) values.drive_engine = 0;
@@ -134,6 +136,7 @@ function run(plugin, params, request = fetch) {
       source_latitude: selected?.latitude ?? 0,
       source_longitude: selected?.longitude ?? 0,
       source_address: selected?.address ?? '',
+      project_address: (selected?.address ?? '').trim().replace(/,\s*(?:RU|Россия)$/i, ''),
       source_geofence_known: Number(selected?.geofence_ids !== undefined),
       source_geofence_ids: selected?.geofence_ids ?? '[]'
     };
@@ -173,10 +176,7 @@ function run(plugin, params, request = fetch) {
       if (channels.some(item => item.chan === 'drive_source')) {
         const drive = driveValues(points, Date.now() / 1000, state.drive_fix_time ?? 0);
         if (drive) Object.assign(values, drive);
-        if (source.source_ready && source.source_address) {
-          const address = source.source_address.trim();
-          if (address) values.project_address = address.replace(/, RU$/, '');
-        }
+        values.drive_speed = drive?.drive_speed ?? -1;
         if (source.source_ready && source.source_geofence_known) {
           const zones = JSON.parse(source.source_geofence_ids).filter(id => id > 0);
           values.project_geofence_id = zones.includes(state.project_geofence_id)
@@ -190,7 +190,7 @@ function run(plugin, params, request = fetch) {
       if (!stopped && message !== lastError) plugin.log('Traccar: ' + message);
       lastError = message;
       points = [];
-      publish({online: 0, has_position: 0, tracker2_has_position: 0,
+      publish({online: 0, drive_speed: -1, has_position: 0, tracker2_has_position: 0,
         tracker3_has_position: 0, ...sourceValues()});
     } finally {
       pending = false;
