@@ -2,6 +2,7 @@
 
 const numeric = value => typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 const binary = value => typeof value === 'boolean' ? Number(value) : [0, 1].includes(value) ? value : undefined;
+const attributeNumber = value => typeof value === 'string' && value.trim() ? numeric(Number(value)) : numeric(value);
 const timestamp = value => typeof value === 'string' ? numeric(Date.parse(value) / 1000) : undefined;
 
 function positionValues(position) {
@@ -18,9 +19,10 @@ function positionValues(position) {
     address: typeof position.address === 'string' ? position.address : '',
     geofence_ids: ids ? JSON.stringify(ids) : undefined,
     geofence_id: ids ? (ids[0] ?? 0) : undefined,
-    power: numeric(attr.power), battery: numeric(attr.battery),
-    ignition: binary(attr.ignition), motion: binary(attr.motion),
-    obd_speed: numeric(attr.obdSpeed), rpm: numeric(attr.rpm),
+    power: attributeNumber(attr.power), battery: numeric(attr.battery),
+    ignition: typeof attr.ignition === 'string' ? binary(attributeNumber(attr.ignition)) : binary(attr.ignition), motion: binary(attr.motion),
+    engine_mode: typeof attr.astart === 'string' ? attr.astart : undefined,
+    obd_speed: attributeNumber(attr.obdSpeed), rpm: numeric(attr.rpm),
     fuel: numeric(attr.fuel), odometer: numeric(attr.odometer),
     total_distance: numeric(attr.totalDistance),
     protocol: typeof position.protocol === 'string' ? position.protocol : undefined,
@@ -52,6 +54,25 @@ function selectPosition(points, mode, previous, now) {
     if (elapsed < -30) return false;
     return distanceKm(previous, point) <= Math.max(0.5, elapsed * 200 / 3600);
   });
+}
+
+function driveValues(points, now, lastFix) {
+  const [teltonika, pandora] = points;
+  const candidates = [teltonika, pandora].map((point, index) => {
+    if (!point || !Number.isFinite(point.fix_time) || now - point.fix_time > 300 ||
+        point.fix_time > now + 30 || point.fix_time < lastFix) return undefined;
+    const values = {};
+    if (point.power !== undefined) values.drive_voltage = point.power;
+    if (point.obd_speed !== undefined) values.drive_speed = point.obd_speed;
+    if (point.ignition !== undefined) values.drive_ignition = point.ignition;
+    if (index === 1 && ['Ra', 'Rm'].includes(point.engine_mode)) values.drive_engine = 1;
+    else if (point.ignition === 0 || (index === 1 && point.engine_mode === '')) values.drive_engine = 0;
+    else if (index === 0 && point.ignition === 1 && point.obd_speed >= 13.5) values.drive_engine = 1;
+    if (!Object.keys(values).length) return undefined;
+    return {...values, drive_fix_time: point.fix_time, drive_source: index === 0 ? 'T' : 'P'};
+  });
+  const [tracker, cloud] = candidates;
+  return tracker && (!cloud || tracker.drive_fix_time >= cloud.drive_fix_time) ? tracker : cloud;
 }
 
 function options(params) {
@@ -148,7 +169,21 @@ function run(plugin, params, request = fetch) {
         for (const [key, value] of Object.entries(point)) values[prefix + key] = value;
         return {...point, sourceId: id};
       });
-      publish({...values, ...sourceValues()});
+      const source = sourceValues();
+      if (channels.some(item => item.chan === 'drive_source')) {
+        const drive = driveValues(points, Date.now() / 1000, state.drive_fix_time ?? 0);
+        if (drive) Object.assign(values, drive);
+        if (source.source_ready && source.source_address) {
+          const address = source.source_address.trim();
+          if (address) values.project_address = address.replace(/, RU$/, '');
+        }
+        if (source.source_ready && source.source_geofence_known) {
+          const zones = JSON.parse(source.source_geofence_ids).filter(id => id > 0);
+          values.project_geofence_id = zones.includes(state.project_geofence_id)
+            ? state.project_geofence_id : (zones[0] ?? 0);
+        }
+      }
+      publish({...values, ...source});
     } catch (error) {
       const message = /^(HTTP \d{3}|неожиданный формат ответа)$/.test(error.message)
         ? error.message : 'ошибка связи или чтения ответа';
@@ -204,4 +239,5 @@ function run(plugin, params, request = fetch) {
 
 module.exports = run;
 module.exports.positionValues = positionValues;
+module.exports.driveValues = driveValues;
 module.exports.selectPosition = selectPosition;
