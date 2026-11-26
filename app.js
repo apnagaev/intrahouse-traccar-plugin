@@ -218,18 +218,32 @@ function run(plugin, params, request = fetch) {
     };
   }
 
+  async function getRows(path) {
+    const response = await request(url + path, {
+      headers: {Authorization: 'Bearer ' + token, Accept: 'application/json'},
+      redirect: 'error',
+      signal: AbortSignal.timeout(8000)
+    });
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    const rows = await response.json();
+    if (!Array.isArray(rows)) throw new Error('неожиданный формат ответа');
+    return rows;
+  }
+
   async function poll() {
     if (pending || stopped) return;
     pending = true;
     try {
-      const response = await request(url + '/api/positions', {
-        headers: {Authorization: 'Bearer ' + token, Accept: 'application/json'},
-        redirect: 'error',
-        signal: AbortSignal.timeout(8000)
-      });
-      if (!response.ok) throw new Error('HTTP ' + response.status);
-      const positions = await response.json();
-      if (!Array.isArray(positions)) throw new Error('неожиданный формат ответа');
+      let positions = await getRows('/api/positions');
+      if (!positions.some(position => ids.includes(Number(position?.deviceId)))) {
+        const devices = await getRows('/api/devices');
+        const positionIds = devices.filter(device => ids.includes(Number(device.id)))
+          .map(device => Number(device.positionId)).filter(id => Number.isSafeInteger(id) && id > 0);
+        if (positionIds.length) {
+          const query = new URLSearchParams(positionIds.map(id => ['id', String(id)]));
+          positions = await getRows('/api/positions?' + query.toString());
+        }
+      }
       const latest = new Map();
       const now = Date.now() / 1000;
       for (const position of positions) {
@@ -243,7 +257,9 @@ function run(plugin, params, request = fetch) {
           latest.set(id, point);
         }
       }
-      lastError = '';
+      const empty = latest.size === 0 ? 'нет точек для настроенных ID ' + ids.join(', ') : '';
+      if (empty && empty !== lastError) plugin.log('Traccar: ' + empty);
+      lastError = empty;
       const values = {online: 1};
       points = ids.map((id, index) => {
         const prefix = index ? 'tracker' + (index + 1) + '_' : '';
