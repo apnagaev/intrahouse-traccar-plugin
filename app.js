@@ -16,7 +16,7 @@ function positionValues(position) {
     latitude: numeric(position.latitude), longitude: numeric(position.longitude),
     accuracy: numeric(position.accuracy), altitude: numeric(position.altitude), course: numeric(position.course),
     speed: speed === undefined ? undefined : Math.round(speed * 1852) / 1000,
-    address: typeof position.address === 'string' ? position.address : '',
+    address: [position.address, attr.address].find(value => typeof value === 'string' && value.trim())?.trim() ?? '',
     geofence_ids: ids ? JSON.stringify(ids) : undefined,
     geofence_id: ids ? (ids[0] ?? 0) : undefined,
     power: attributeNumber(attr.power), battery: numeric(attr.battery),
@@ -54,6 +54,15 @@ function selectPosition(points, mode, previous, now) {
     if (elapsed < -30) return false;
     return distanceKm(previous, point) <= Math.max(0.5, elapsed * 200 / 3600);
   });
+}
+
+function displayAddress(selected, points, mode) {
+  if (selected?.address) return selected.address;
+  const last = points.reduce((best, point, index) => {
+    if (!point?.address || (mode && mode !== index + 1) || !Number.isFinite(point.fix_time)) return best;
+    return !best || point.fix_time > best.fix_time ? point : best;
+  }, undefined);
+  return last ? 'Последний адрес: ' + last.address : '';
 }
 
 function driveValues(points, now, lastFix) {
@@ -106,6 +115,7 @@ function run(plugin, params, request = fetch) {
   let mode = defaultMode;
   let accepted;
   let points = [];
+  const addressPoints = [];
   const state = {};
   const sent = new Map();
   let channels = [];
@@ -136,7 +146,7 @@ function run(plugin, params, request = fetch) {
       source_latitude: selected?.latitude ?? 0,
       source_longitude: selected?.longitude ?? 0,
       source_address: selected?.address ?? '',
-      project_address: (selected?.address ?? '').trim().replace(/,\s*(?:RU|Россия)$/i, ''),
+      project_address: displayAddress(selected, addressPoints, mode).replace(/,\s*(?:RU|Россия)$/i, ''),
       source_geofence_known: Number(selected?.geofence_ids !== undefined),
       source_geofence_ids: selected?.geofence_ids ?? '[]'
     };
@@ -170,6 +180,10 @@ function run(plugin, params, request = fetch) {
         if (!position) return undefined;
         const point = positionValues(position);
         for (const [key, value] of Object.entries(point)) values[prefix + key] = value;
+        if (point.address && Number.isFinite(point.fix_time) &&
+            (!addressPoints[index] || point.fix_time >= addressPoints[index].fix_time)) {
+          addressPoints[index] = point;
+        }
         return {...point, sourceId: id};
       });
       const source = sourceValues();
