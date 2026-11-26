@@ -8,7 +8,7 @@ const timestamp = value => typeof value === 'string' ? numeric(Date.parse(value)
 function positionValues(position) {
   const attr = position.attributes ?? {};
   const geofences = position.geofenceIds ?? attr.geofenceIds;
-  const ids = Array.isArray(geofences) ? geofences.filter(Number.isSafeInteger) : undefined;
+  const ids = Array.isArray(geofences) ? geofences.map(attributeNumber).filter(Number.isSafeInteger) : undefined;
   const speed = numeric(position.speed);
   const values = {
     position_id: numeric(position.id), fix_time: timestamp(position.fixTime),
@@ -29,6 +29,54 @@ function positionValues(position) {
     attributes: JSON.stringify(attr)
   };
   return Object.fromEntries(Object.entries(values).filter(([, value]) => value !== undefined));
+}
+
+function comparePoints(a, b) {
+  return (a.fix_time ?? -Infinity) - (b.fix_time ?? -Infinity) ||
+    (a.server_time ?? -Infinity) - (b.server_time ?? -Infinity) ||
+    (a.position_id ?? 0) - (b.position_id ?? 0);
+}
+
+function sourceSnapshot(points, mode, now) {
+  const point = points.reduce((selected, point, index) => {
+    if (!point || (mode && mode !== index + 1) || !Number.isFinite(point.fix_time) ||
+        point.fix_time > now + 300) return selected;
+    return !selected || comparePoints(point, selected) > 0 ? point : selected;
+  }, undefined);
+  if (!point) return null;
+  const attr = JSON.parse(point.attributes);
+  const coordinates = point.valid === 1 && Number.isFinite(point.latitude) &&
+    Number.isFinite(point.longitude) && Math.abs(point.latitude) <= 90 &&
+    Math.abs(point.longitude) <= 180 && Boolean(point.latitude || point.longitude);
+  const speed = [coordinates ? point.speed : undefined, point.obd_speed]
+    .find(value => Number.isFinite(value) && value >= 0);
+  return {
+    deviceId: point.sourceId,
+    timestamp: point.fix_time,
+    fresh: now - Math.min(point.fix_time, point.server_time ?? point.fix_time) <= 300,
+    latitude: coordinates ? point.latitude : undefined,
+    longitude: coordinates ? point.longitude : undefined,
+    address: point.address || undefined,
+    geofences: point.geofence_ids === undefined ? undefined : JSON.parse(point.geofence_ids),
+    speed,
+    voltage: point.power,
+    ignition: point.ignition,
+    motion: point.motion,
+    rpm: attributeNumber(attr.rpm ?? attr.engineRpm),
+    engineRunning: ['Ra', 'Rm'].includes(point.engine_mode) || Number(attr.rpm ?? attr.engineRpm) > 0,
+    engineTemp: attributeNumber(attr.engine_temp ?? attr.engineTemp),
+    coolantTemp: attributeNumber(attr.coolant_temp ?? attr.coolantTemp),
+    cabinTemp: attributeNumber(attr.cabin_temp ?? attr.cabinTemp),
+    outsideTemp: attributeNumber(attr.outside_temp ?? attr.outsideTemp),
+    intakeTemp: attributeNumber(attr.intake_air_temp ?? attr.intakeTemp),
+    throttle: attributeNumber(attr.throttle_position ?? attr.throttle),
+    fuel: attributeNumber(attr.fuelLitres ?? (point.protocol === 'osmand' && point.rpm !== undefined ? attr.fuel : undefined)),
+    fuelAverage: attributeNumber(attr.fuel_average),
+    fuelRange: attributeNumber(attr.fuel_range),
+    fuelDistance: attributeNumber(attr.fuel_distance),
+    eco: attributeNumber(attr.ECO ?? attr.eco),
+    odometerKm: point.odometer === undefined ? undefined : point.odometer / 1000
+  };
 }
 
 function distanceKm(a, b) {
@@ -138,6 +186,7 @@ function run(plugin, params, request = fetch) {
     const selected = selectPosition(points, mode, accepted, Date.now() / 1000);
     if (selected) accepted = selected;
     return {
+      source_snapshot: JSON.stringify(sourceSnapshot(points, mode, Date.now() / 1000)),
       source_mode: mode,
       set_source_mode: mode,
       source_device_id: selected?.sourceId ?? 0,
@@ -167,18 +216,17 @@ function run(plugin, params, request = fetch) {
       const latest = new Map();
       for (const position of positions) {
         if (!position || !ids.includes(position.deviceId)) continue;
-        if (!latest.has(position.deviceId) || position.id > latest.get(position.deviceId).id) {
-          latest.set(position.deviceId, position);
-        }
+        const point = positionValues(position);
+        const prior = latest.get(position.deviceId);
+        if (!prior || comparePoints(point, prior) > 0) latest.set(position.deviceId, point);
       }
       lastError = '';
       const values = {online: 1};
       points = ids.map((id, index) => {
         const prefix = index ? 'tracker' + (index + 1) + '_' : '';
-        const position = latest.get(id);
-        values[prefix + 'has_position'] = Number(Boolean(position));
-        if (!position) return undefined;
-        const point = positionValues(position);
+        const point = latest.get(id);
+        values[prefix + 'has_position'] = Number(Boolean(point));
+        if (!point) return undefined;
         for (const [key, value] of Object.entries(point)) values[prefix + key] = value;
         if (point.address && Number.isFinite(point.fix_time) &&
             (!addressPoints[index] || point.fix_time >= addressPoints[index].fix_time)) {
@@ -255,3 +303,4 @@ module.exports = run;
 module.exports.positionValues = positionValues;
 module.exports.driveValues = driveValues;
 module.exports.selectPosition = selectPosition;
+module.exports.sourceSnapshot = sourceSnapshot;
