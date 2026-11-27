@@ -22,6 +22,11 @@
       "prop": "jsonPath",
       "title": "Путь JSON (например attributes.rpm)",
       "type": "input"
+    },
+    {
+      "prop": "sourceDeviceId",
+      "title": "ID устройства Traccar (пусто — авто)",
+      "type": "input"
     }
   ]
 }

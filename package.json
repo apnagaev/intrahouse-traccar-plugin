@@ -1,6 +1,6 @@
 {
   "name": "intrahouse-traccar",
-  "version": "5.0.15",
+  "version": "5.0.16",
   "private": true,
   "main": "index.js",
   "engines": {"node": ">=18"},

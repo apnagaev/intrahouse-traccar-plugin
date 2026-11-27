@@ -55,7 +55,7 @@ function pointValues(position, trackerIndex) {
       fuelRange: attributeNumber(attrs.fuel_range),
       fuelDistance: attributeNumber(attrs.fuel_distance),
       eco: attributeNumber(attrs.ECO ?? attrs.eco),
-      odometerKm: odometer !== undefined ? odometer / 1000 : totalDistance
+      odometerKm: odometer !== undefined ? odometer / 1000 : totalDistance === undefined ? undefined : totalDistance / 1000
     }
   };
 }
@@ -139,6 +139,8 @@ function run(plugin, params, request = fetch) {
   const {url, ids, interval, token, mode: initialMode} = options(params);
   let mode = initialMode;
   let points = new Map();
+  let names = new Map();
+  let refreshNamesAt = 0;
   let status = {online: false, error: 'Ожидание ответа Traccar'};
   let channels = [];
   const sent = new Map();
@@ -161,6 +163,22 @@ function run(plugin, params, request = fetch) {
   function publish() {
     if (stopped) return;
     const packet = snapshot(points, ids, mode, Date.now() / 1000, status);
+    for (const tracker of packet.trackers) tracker.name = names.get(tracker.id);
+    const packetFields = {
+      address: 'address', latitude: 'latitude', longitude: 'longitude', speed: 'speed',
+      geofenceIds: 'geofences', attributes_fuel: 'fuel', attributes_odometer: 'odometerKm',
+      attributes_power: 'voltage', attributes_ignition: 'ignition', attributes_motion: 'motion',
+      attributes_rpm: 'rpm', attributes_engine_temp: 'engineTemp', attributes_cabin_temp: 'cabinTemp',
+      attributes_ECO: 'eco'
+    };
+    for (const channel of channels) {
+      const field = packetFields[channel.chan];
+      if (!Object.hasOwn(packetFields, channel.chan) || !channel.sourceDeviceId) continue;
+      const point = points.get(Number(channel.sourceDeviceId));
+      packet[field] = point?.fields[field];
+      delete packet.sources[field];
+      if (packet[field] !== undefined) packet.sources[field] = point.deviceId;
+    }
     const ordered = [...points.values()].sort(compare);
     const preferred = points.get(ids[mode - 1]);
     if (preferred) ordered.unshift(preferred);
@@ -170,7 +188,7 @@ function run(plugin, params, request = fetch) {
       if (channel.chan === CHANNEL) value = JSON.stringify(packet);
       else {
         const path = String(channel.jsonPath || channel.chan).trim().split('.');
-        for (const point of ordered) {
+        for (const point of channel.sourceDeviceId ? ordered.filter(p => p.deviceId === Number(channel.sourceDeviceId)) : ordered) {
           value = point.raw;
           for (const key of path) {
             value = value != null && Object.hasOwn(value, key) ? value[key] : undefined;
@@ -314,6 +332,15 @@ function run(plugin, params, request = fetch) {
         throw new Error(rejected[0].path);
       }
 
+      if (Date.now() >= refreshNamesAt) {
+        refreshNamesAt = Date.now() + 300000;
+        try {
+          const devices = await getRows('/api/devices');
+          names = new Map(devices.map(device => [Number(device.id), device.name]));
+        } catch (error) {
+          plugin.log('Traccar: не удалось обновить названия устройств');
+        }
+      }
       points = latest;
       status = {online: true, error: latest.size ? '' : invalidTimes
         ? `Получено строк без корректного serverTime: ${invalidTimes}`
